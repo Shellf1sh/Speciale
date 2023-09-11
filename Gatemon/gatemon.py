@@ -37,7 +37,7 @@ class Qubit:
         second_deriv[0,self.n-1] = -1 #Add periodic boundary conditions
         second_deriv[self.n-1,0] = -1
 
-        hkin = 4.0*self.EC*(1/(dx**2)*second_deriv - 2*self.ng/(2*dx)*first_deriv)# + self.ng**2*iden) #Combine to create the kinetic energy term
+        hkin = 4.0*self.EC*(1/(dx**2)*second_deriv - 2*self.ng/(2*dx)*first_deriv + self.ng**2*iden) #Combine to create the kinetic energy term
 
         if self.model=='averin':
             hkin = np.kron(hkin,np.identity(2))    
