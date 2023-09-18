@@ -4,11 +4,12 @@ import scipy as sc
 
 #================================General Qubits==============================================
 class Qubit:#The base qubit class with the things that all qubits require
-    def __init__(self, N, verbose = False):
+    def __init__(self, N):
         self.N = int(N)
-        self.verbose = verbose
+        self.verbose = False
         self.eigvals = np.array([])   
         self.eigvecs = np.array([])
+
 
     def Hamkin(self):
         return np.array([])
@@ -36,8 +37,8 @@ class Qubit:#The base qubit class with the things that all qubits require
 
 #================================Transmon in charge basis===========================================
 class transmon_charge(Qubit):
-    def __init__(self, N, EC, EJ, ng, verbose = False):
-        super().__init__(N, verbose)
+    def __init__(self, N, EC, EJ, ng):
+        super().__init__(N)
         self.EC = EC
         self.EJ = EJ
         self.ng = ng
@@ -107,6 +108,7 @@ class gatemon_charge(Qubit):#Averins model for the Gatemon
         self.gap = gap
         self.ng = ng
         self.T = T
+        self.transform_variabels = False
 
         if(self.N%2 == 0):#Making sure that the resolution is uneven
             self.N += 1
@@ -114,33 +116,89 @@ class gatemon_charge(Qubit):#Averins model for the Gatemon
         self.n_cut = int((self.N-1)/2)#Setting the charge cut-off
 
     def Hamkin(self):
-        n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
+        if(self.transform_variabels):
+            n_array = np.array([(2*i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
+        else:
+            n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
         hkin = 4*self.EC*np.diag(n_array) #In charge basis the (n-ng)**2 term is a diagonal matrix
-        print(np.shape(hkin))
         hkin_2channel = np.kron(np.identity(2), hkin)
         return hkin_2channel
     
     def Hampot(self):
-        sy=np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
-        sz=np.array([[1,0],[0,-1]])
-        r = np.sqrt(1-self.T)#Why? Ask Karsten
+        sx = np.array([[0, 1],[1, 0]])
+        sy = np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
+        sz = np.array([[1,0],[0,-1]])
+        r = np.sqrt(1-self.T)#From Kringhoej 2020
 
-        #If I can do change of variable I might be able to use these sine and cosine functions
-        off_diag = np.ones(self.N-1)  
-        cos = (np.diag(off_diag, 1) + np.diag(off_diag, -1))/2
-        sin = (np.diag(off_diag, 1) - np.diag(off_diag, -1))/(2j)
+        if(self.transform_variabels):
+            #If I can do change of variable I might be able to use these sine and cosine functions
+            off_diag = np.ones(self.N-1)  
+            cos = (np.diag(off_diag, 1) + np.diag(off_diag, -1))/2
+            sin = (np.diag(off_diag, 1) - np.diag(off_diag, -1))/(2j)
+        else:
+            #These are the functions for if I need to use the sin-half and cosine-half functions
+            coords = np.arange(0, self.N)
+            x, y = np.meshgrid(coords, coords)
 
-        #These are the functions for if I need to use the sin-half and cosine-half functions
-        coords = np.arange(0, self.N)
-        x, y = np.meshgrid(coords, coords)
+            #====Interesting note, these matrices lift the degeneracy even for T=1 and ng=0 WHY?
+            #Another note: Changing phi/2 -> phi we should change n -> 2n, but do we change ng?
+            cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
+            sin = 4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
 
-        #====Interesting note, these matrices lift the degeneracy even for T=1 and ng=0
-        cos_half = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
-        sin_half = 4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
+        if(self.verbose):
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            ax1.imshow(cos.real)
+            ax1.set(title = "Cosine (Real part)")
+            ax2.imshow(sin.imag)
+            ax2.set(title = "Sine (Imaginary part)")
 
-        return self.gap*(np.kron(sz, cos_half) + r*np.kron(sy, sin_half))
+
+        return self.gap*(np.kron(sz, cos) + r*np.kron(sx, sin))
 
     def plot_wav(self, x, wavefuncs):
         super().plot_wav(x, wavefuncs)
         plt.xlabel(r'$n$')
         plt.ylabel(r'\varphi')
+
+
+#================================Gatemon in flux basis===========================================
+class gatemon_flux(Qubit):#Averins model for the Gatemon
+    def __init__(self, N, EC, gap, T, ng): #Parse all the constants
+        super().__init__(N)
+        self.EC = EC
+        self.gap = gap
+        self.ng = ng
+        self.T = T
+        self.transform_variabels = False
+        self.dx = 2.*np.pi/self.N
+
+        self.phi_array = np.linspace(-np.pi, np.pi, self.N)
+
+
+    def Hamkin(self):
+        vec = np.ones(self.N - 1)
+        iden = np.identity(self.N)
+        s0 = np.array([[1, 0],[0, 1]])
+        
+        first_deriv = 1j*np.diag(vec,-1)-1j*np.diag(vec,1) #Create the first derivative
+        first_deriv[0,self.N-1] = -1j#Add periodic boundary conditions
+        first_deriv[self.N-1,0] = 1j
+
+        second_deriv = (2*iden-np.diag(vec,-1)-np.diag(vec,1)) #Create the second derivative matrix
+        second_deriv[0,self.N-1] = -1 #Add periodic boundary conditions
+        second_deriv[self.N-1,0] = -1
+
+        hkin = 4.0*self.EC*(1/(self.dx**2)*second_deriv - 2*self.ng/(2*self.dx)*first_deriv + self.ng**2*iden) #Combine to create the kinetic energy term
+        return  np.kron(s0, hkin)
+
+
+    def Hampot(self):
+        sx = np.array([[0, 1],[1, 0]])
+        sy = np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
+        sz = np.array([[1,0],[0,-1]])
+        r = np.sqrt(1-self.T)#From Kringhoej 2020
+
+        cos = np.diag(np.cos(self.phi_array/2))
+        sin = np.diag(np.sin(self.phi_array/2))
+
+        return self.gap*(np.kron(sz, cos) + r*np.kron(sx, sin))
