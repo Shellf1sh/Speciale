@@ -19,8 +19,11 @@ class Qubit:#The base qubit class with the things that all qubits require
 
 
     def Hamiltonian(self):
-        return self.Hamkin() + self.Hampot()
-    
+        self.Hamtot = self.Hamkin() + self.Hampot()
+        if(sc.linalg.ishermitian(self.Hamtot) != True):
+            print("The Hamiltinian is not hermitian!!!")
+        return self.Hamtot
+
     def solve(self):
         eigenvalues, eigenvectors =  np.linalg.eigh(self.Hamiltonian())
         self.eigvals = eigenvalues
@@ -80,7 +83,7 @@ class transmon_flux(Qubit):
 
     def Hamkin(self):
         iden = np.identity(self.N)
-        dx = 2.*np.pi/self.N
+        dx = 2*np.pi/self.N
 
         first_deriv = 1j*np.diag(self.off_diag,-1)-1j*np.diag(self.off_diag,1) #Create the first derivative
         first_deriv[0,self.N-1] = -1j#Add periodic boundary conditions
@@ -101,25 +104,23 @@ class transmon_flux(Qubit):
         return cos
 
 #================================Gatemon in charge basis===========================================
-class gatemon_charge(Qubit):#Averins model for the Gatemon
+class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
     def __init__(self, N, EC, gap, T, ng): #Parse all the constants
         super().__init__(N)
         self.EC = EC
         self.gap = gap
         self.ng = ng
         self.T = T
-        self.transform_variabels = False
+        
 
         if(self.N%2 == 0):#Making sure that the resolution is uneven
             self.N += 1
 
         self.n_cut = int((self.N-1)/2)#Setting the charge cut-off
 
+
     def Hamkin(self):
-        if(self.transform_variabels):
-            n_array = np.array([(2*i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
-        else:
-            n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
+        n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
         hkin = 4*self.EC*np.diag(n_array) #In charge basis the (n-ng)**2 term is a diagonal matrix
         hkin_2channel = np.kron(np.identity(2), hkin)
         return hkin_2channel
@@ -128,68 +129,71 @@ class gatemon_charge(Qubit):#Averins model for the Gatemon
         sx = np.array([[0, 1],[1, 0]])
         sy = np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
         sz = np.array([[1,0],[0,-1]])
-        r = np.sqrt(1-self.T)#From Kringhoej 2020
 
-        if(self.transform_variabels):
-            #If I can do change of variable I might be able to use these sine and cosine functions
-            off_diag = np.ones(self.N-1)  
-            cos = (np.diag(off_diag, 1) + np.diag(off_diag, -1))/2
-            sin = (np.diag(off_diag, 1) - np.diag(off_diag, -1))/(2j)
-        else:
-            #These are the functions for if I need to use the sin-half and cosine-half functions
-            coords = np.arange(0, self.N)
-            x, y = np.meshgrid(coords, coords)
+        self.r = np.sqrt(1-self.T)#From Kringhoej 2020
 
-            #====Interesting note, these matrices lift the degeneracy even for T=1 and ng=0 WHY?
-            #Another note: Changing phi/2 -> phi we should change n -> 2n, but do we change ng?
-            cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
-            sin = 4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
+        self.coords = np.arange(-self.n_cut, self.n_cut+1)
+        
+        x, y = np.meshgrid(self.coords, self.coords)
+
+        #====Interesting note, these matrices lift the degeneracy even for T=1 and ng=0 WHY?
+        self.cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
+        self.sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
 
         if(self.verbose):
             fig, (ax1, ax2) = plt.subplots(1, 2)
-            ax1.imshow(cos.real)
+            ax1.imshow(self.cos.real)
             ax1.set(title = "Cosine (Real part)")
-            ax2.imshow(sin.imag)
+            ax2.imshow(self.sin.imag)
             ax2.set(title = "Sine (Imaginary part)")
 
-
-        return self.gap*(np.kron(sz, cos) + r*np.kron(sx, sin))
+        return self.gap*(np.kron(sz, self.cos) + self.r*np.kron(sx, self.sin))
 
     def plot_wav(self, x, wavefuncs):
         super().plot_wav(x, wavefuncs)
         plt.xlabel(r'$n$')
         plt.ylabel(r'\varphi')
 
+    def set_resolution(self, N):
+        self.N = N
+        if(self.N%2 == 0):#Making sure that the resolution is uneven
+            self.N += 1
+
+        self.n_cut = int((self.N-1)/2)#Setting the charge cut-off
 
 #================================Gatemon in flux basis===========================================
 class gatemon_flux(Qubit):#Averins model for the Gatemon
-    def __init__(self, N, EC, gap, T, ng): #Parse all the constants
+    def __init__(self, N, EC, gap, T, ng): #Parse all the parameters
         super().__init__(N)
         self.EC = EC
         self.gap = gap
         self.ng = ng
         self.T = T
-        self.transform_variabels = False
-        self.dx = 2.*np.pi/self.N
+        self.beenakker = False
+        self.dx = 2.0*np.pi/self.N
 
         self.phi_array = np.linspace(-np.pi, np.pi, self.N)
-
 
     def Hamkin(self):
         vec = np.ones(self.N - 1)
         iden = np.identity(self.N)
-        s0 = np.array([[1, 0],[0, 1]])
         
-        first_deriv = 1j*np.diag(vec,-1)-1j*np.diag(vec,1) #Create the first derivative
-        first_deriv[0,self.N-1] = -1j#Add periodic boundary conditions
-        first_deriv[self.N-1,0] = 1j
+        first_deriv = -1j/(2*self.dx) * (np.diag(vec, 1) + np.diag(-1*vec, -1)) #Create the first derivative
+        first_deriv[0,self.N-1] = -1j/(2*self.dx)#Add periodic boundary conditions
+        first_deriv[self.N-1,0] = 1j/(2*self.dx)
 
-        second_deriv = (2*iden-np.diag(vec,-1)-np.diag(vec,1)) #Create the second derivative matrix
-        second_deriv[0,self.N-1] = -1 #Add periodic boundary conditions
-        second_deriv[self.N-1,0] = -1
+        second_deriv = -1/(self.dx**2)*(-2*iden+np.diag(vec,-1)+np.diag(vec,1)) #Create the second derivative matrix
+        second_deriv[0,self.N-1] = -1/(self.dx**2) #Add periodic boundary conditions
+        second_deriv[self.N-1,0] = -1/(self.dx**2)
 
-        hkin = 4.0*self.EC*(1/(self.dx**2)*second_deriv - 2*self.ng/(2*self.dx)*first_deriv + self.ng**2*iden) #Combine to create the kinetic energy term
-        return  np.kron(s0, hkin)
+        n_const = self.ng*np.identity(self.N)
+
+        hkin = 4.0*self.EC*(second_deriv - 2*self.ng*first_deriv + n_const@n_const) #Combine to create the kinetic energy term
+        
+        if(self.beenakker):
+            return hkin
+
+        return  np.kron(np.identity(2), hkin)
 
 
     def Hampot(self):
@@ -201,4 +205,16 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         cos = np.diag(np.cos(self.phi_array/2))
         sin = np.diag(np.sin(self.phi_array/2))
 
-        return self.gap*(np.kron(sz, cos) + r*np.kron(sx, sin))
+        if(self.beenakker):
+            self.sin_half = np.sin(self.phi_array/2)
+            beenakker_pot = -self.gap*np.sqrt(1-(self.T)*self.sin_half**2)
+            return np.diag(beenakker_pot)
+
+        return -self.gap*(np.kron(sz, cos) + r*np.kron(sy, sin))
+    
+    def set_resolution(self, N):
+        self.N = N
+        self.dx = 2.0*np.pi/self.N
+
+        self.phi_array = np.linspace(-np.pi, np.pi, self.N)
+
