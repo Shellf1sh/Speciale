@@ -29,6 +29,19 @@ class Qubit:#The base qubit class with the things that all qubits require
         self.eigvals = eigenvalues
         self.eigvecs = eigenvectors
 
+    def matrix_element_C(self):
+        return 0
+
+    def T_1_gamma(self):
+
+        #constant_1f_flux = 2*np.pi*A_flux**2/(sc.constants.hbar*abs(self.eigvals[1]-self.eigvals[0]))
+        constant_1f_ng = 2*np.pi*10/(4*abs(self.eigvals[1]-self.eigvals[0]))
+        constant_ohmic_ng = 5.2**2 * (self.eigvals[1]-self.eigvals[0])/(4*2*np.pi)
+    
+        mel = self.matrix_element_C()
+
+        return np.array([constant_1f_ng*mel, constant_ohmic_ng*mel])
+
     def plot_wav(self, x, wavefuncs):
         if(len(self.eigvals) == 0):#If the Hamiltonian hasn't been solved yet then solve it
             self.solve()
@@ -70,7 +83,39 @@ class transmon_charge(Qubit):
         print(self.eigvals[:number_of_wavefuncs])
         #plt.plot(self.n_array, self.n_squared, '-o', color="black")
         return super().plot_wav(self.n_array, number_of_wavefuncs)
+    
+    #T_1 time calculations
+    def T_1_noise(self):
+        if(len(self.eigvals) == 0):#If the Hamiltonian hasn't been solved yet then solve it
+            self.solve()
+        
+        A = 1e-4 #There's no external flux so we only need the constant for charge noise
+        B = 5.2e-9 
+        state0 = self.eigvecs[:,0]
+        state1 = self.eigvecs[:,1]
 
+        #Derivative of the Hamiltonian
+        DH = 8*self.EC*np.diag(np.array([(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+
+        #The matrix element squared
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+
+        constant_1f = 2*np.pi*1e-3/(abs(self.eigvals[1]-self.eigvals[0]))
+
+        #constant_ohmic = B**2*abs(self.eigvals[1]-self.eigvals[0])/(2*np.pi*1e9)
+
+        return constant_1f*mel #The factor 1e9 and hbar is the approriate factor to convert the result to seconds 
+
+    def matrix_element_C(self):
+        state0 = self.eigvecs[:,0]
+        state1 = self.eigvecs[:,1]
+
+        DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+
+        #The matrix element squared
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+        return mel
+    
 
 #================================Transmon in flux basis===========================================
 class transmon_flux(Qubit):
@@ -97,12 +142,56 @@ class transmon_flux(Qubit):
         return hkin
     
     def Hampot(self):  
-        dx = 2.*np.pi/self.N
+        dx = 2.0*np.pi/self.N
         x = np.array([-np.pi+dx*i for i in np.arange(self.N)])
         cos_arr = -self.EJ*np.array([np.cos(xi) for xi in x])          
         cos = np.diag(cos_arr)
         return cos
+    
+    def T_1_noise(self):
+        if(len(self.eigvals) == 0):#If the Hamiltonian hasn't been solved yet then solve it
+            self.solve()
+        
+        A = 1e-4 #There's no external flux so we only need the constant for charge noise
+        B = 5.2e-9 
+        state0 = self.eigvecs[:,0]
+        state1 = self.eigvecs[:,1]
 
+        #Derivative of the Hamiltonian
+        n = 1j*np.diag(self.off_diag,-1)-1j*np.diag(self.off_diag,1) #Create the first derivative
+        n[0,self.N-1] = -1j#Add periodic boundary conditions
+        n[self.N-1,0] = 1j
+        dx = 2.*np.pi/self.N
+
+        DH = 8*self.EC*(1/(2*dx)*n + self.ng*np.eye(self.N)) 
+
+        #The matrix element squared
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+
+        constant_1f = 2*np.pi*1e-3/(abs(self.eigvals[1]-self.eigvals[0]))
+
+        #constant_ohmic = B**2*abs(self.eigvals[1]-self.eigvals[0])/(2*np.pi*1e9)
+
+        return constant_1f*mel*1e9*sc.constants.hbar #The factor 1e9 and hbar is the approriate factor to convert the result to seconds 
+
+
+    def matrix_element_C(self):
+        dx = 2.0*np.pi/self.N
+        state0 = self.eigvecs[:,0]
+        state1 = self.eigvecs[:,1]
+
+        #Derivative of the Hamiltonian
+        n = 1j*np.diag(self.off_diag,-1)-1j*np.diag(self.off_diag,1) #Create the first derivative
+        n[0,self.N-1] = -1j#Add periodic boundary conditions
+        n[self.N-1,0] = 1j
+        dx = 2.*np.pi/self.N
+
+        DH = -8*self.EC*(1/(2*dx)*n + self.ng*np.eye(self.N))
+
+        #The matrix element squared
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+
+        return mel
 #================================Gatemon in charge basis===========================================
 class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
     def __init__(self, N, EC, gap, T, ng): #Parse all the constants
