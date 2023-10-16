@@ -112,11 +112,10 @@ class transmon_charge(Qubit):
         state1 = self.eigvecs[:,1]
         off_diag = np.ones(self.N - 1)
         
-        phi_matrix = -1j/2 * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
-
-        #The charge basis is not periodic
-        #phi_matrix[0,self.N-1] = -1j/2#Add periodic boundary conditions
-        #phi_matrix[self.N-1,0] = 1j/2
+        phi_matrix = 1/2j * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
+       
+        phi_matrix[0,self.N-1] = -1/2j#Add periodic boundary conditions
+        phi_matrix[self.N-1,0] = 1/2j
 
         mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
 
@@ -173,11 +172,15 @@ class transmon_flux(Qubit):
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        phi_matrix = np.diag(np.linspace(-np.pi, np.pi, self.N))
+        sin = np.sin(np.linspace(-np.pi, np.pi, self.N))
+        sin_matrix = np.diag(sin)
 
-        mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
+        mel = np.absolute(np.conjugate(state1.T) @ sin_matrix @ state0)**2
 
         return mel
+
+    
+
 #================================Gatemon in charge basis===========================================
 class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
     def __init__(self, N, EC, gap, T, ng): #Parse all the constants
@@ -241,7 +244,10 @@ class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
         state1 = self.eigvecs[:,1]
         off_diag = np.ones(self.N - 1)
         
-        phi_matrix = -1j/(2) * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
+        phi_matrix = 1/2j * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
+        
+        phi_matrix[0,self.N-1] = -1/2j#Add periodic boundary conditions
+        phi_matrix[self.N-1,0] = 1/2j
 
         phi_matrix = np.kron(phi_matrix, np.eye(2))
 
@@ -335,7 +341,7 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        phi_matrix = np.diag(self.phi_array)
+        phi_matrix = np.diag(np.sin(self.phi_array))
         if(not self.beenakker):
             phi_matrix = np.kron(phi_matrix, np.eye(2))
         
