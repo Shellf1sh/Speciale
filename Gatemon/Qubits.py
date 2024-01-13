@@ -36,15 +36,21 @@ class Qubit:#The base qubit class with the things that all qubits require
     
     def matrix_element_F(self):
         return 0 #This is basis and design specific, see child classes
+    
+    def n_matrix(self):
+        return 0 #This is basis and model specific, see child classes
+    
+    def phi_matrix(self):
+        return 0 #This is basis and model specific, see child classes
 
     def T_1_gamma(self):
         #constant_1f_flux = 2*np.pi*A_flux**2/(sc.constants.hbar*abs(self.eigvals[1]-self.eigvals[0]))
         constant_1f_ng = 2*np.pi*10/(4*abs(self.eigvals[1]-self.eigvals[0]))
         constant_ohmic_ng = 5.2**2 * (self.eigvals[1]-self.eigvals[0])/(4*2*np.pi)
-        pre_costant_dielectric = (self.eigvals[1]-self.eigvals[0])*100/(2*self.EC)
-        post_costant_dielectric = 1/np.tanh((self.eigvals[1]-self.eigvals[0])*hbar*1e9/(2*kB*0.02)) + 1
+        pre_constant_dielectric = (self.eigvals[1]-self.eigvals[0])*100/(2*self.EC)
+        post_constant_dielectric = 1/np.tanh((self.eigvals[1]-self.eigvals[0])*hbar*1e9/(2*kB*0.02)) + 1
         #The temperature is set at 20mK like in the litterature
-        costant_dielectric = pre_costant_dielectric * post_costant_dielectric
+        costant_dielectric = pre_constant_dielectric * post_constant_dielectric
 
         mel_C = self.matrix_element_C()
         mel_F = self.matrix_element_F()
@@ -101,7 +107,7 @@ class transmon_charge(Qubit):
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        DH = np.diag(np.array([8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
 
@@ -113,7 +119,7 @@ class transmon_charge(Qubit):
         off_diag = np.ones(self.N - 1)
         
         phi_matrix = 1/2j * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
-       
+        #This is technically a sin(phi) matrix element in charge basis
         phi_matrix[0,self.N-1] = -1/2j#Add periodic boundary conditions
         phi_matrix[self.N-1,0] = 1/2j
 
@@ -161,7 +167,7 @@ class transmon_flux(Qubit):
         n[0,self.N-1] = 1j#Add periodic boundary conditions
         n[self.N-1,0] = -1j
 
-        DH = 8*self.EC*(n/(2*self.dx) - self.ng*np.eye(self.N))
+        DH = -8*self.EC*(n/(2*self.dx) - self.ng*np.eye(self.N)) #This is dH/dng
 
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
@@ -182,13 +188,15 @@ class transmon_flux(Qubit):
     
 
 #================================Gatemon in charge basis===========================================
-class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
+class gatemon_charge(Qubit):#Averin model for the Gatemon
     def __init__(self, N, EC, gap, T, ng): #Parse all the constants
         super().__init__(N)
         self.EC = EC
         self.gap = gap
         self.ng = ng
         self.T = T
+        #There is no Beenakker model in charge basis because it would require numerical integration 
+        #of every matrix element of the sqrt(1-sin(phi/2)^2) operator
         
         if(self.N%2 == 0):#Making sure that the resolution is uneven
             self.N += 1
@@ -199,6 +207,7 @@ class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
     def Hamkin(self):
         n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
         hkin = 4*self.EC*np.diag(n_array) #In charge basis the (n-ng)**2 term is a diagonal matrix
+
         hkin_2channel = np.kron(np.identity(2), hkin)
         return hkin_2channel
     
@@ -230,9 +239,9 @@ class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        DH = np.diag(np.array([8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
 
-        DH = np.kron(DH, np.eye(2))
+        DH = np.kron(np.eye(2), DH)
 
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
@@ -249,7 +258,7 @@ class gatemon_charge(Qubit):#Averin/Kringhøj model for the Gatemon
         phi_matrix[0,self.N-1] = -1/2j#Add periodic boundary conditions
         phi_matrix[self.N-1,0] = 1/2j
 
-        phi_matrix = np.kron(phi_matrix, np.eye(2))
+        phi_matrix = np.kron(np.eye(2), phi_matrix)
 
         mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
 
@@ -285,8 +294,8 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         iden = np.identity(self.N)
         
         n = -1j/(2*self.dx) * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
-        n[0,self.N-1] = -1j/(2*self.dx)#Add periodic boundary conditions
-        n[self.N-1,0] = 1j/(2*self.dx)
+        n[0,self.N-1] = 1j/(2*self.dx)#Add periodic boundary conditions
+        n[self.N-1,0] = -1j/(2*self.dx)
 
         n2 = -1/(self.dx**2)*(-2*iden+np.diag(off_diag,-1)+np.diag(off_diag,1)) #Create the second derivative matrix
         n2[0,self.N-1] = -1/(self.dx**2) #Add periodic boundary conditions
@@ -299,7 +308,7 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         if(self.beenakker):
             return hkin
 
-        return  np.kron(np.identity(2), hkin)
+        return  np.kron(np.eye(2), hkin)
 
 
     def Hampot(self):
@@ -328,9 +337,9 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         n[0,self.N-1] = -1j#Add periodic boundary conditions
         n[self.N-1,0] = 1j
 
-        DH = (1/(2*self.dx)*n + self.ng*np.eye(self.N))
+        DH = -(1/(2*self.dx)*n - self.ng*np.eye(self.N))
         if(not self.beenakker):
-            DH = np.kron(DH, np.eye(2))
+            DH = np.kron(np.eye(2), DH)
 
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
@@ -343,7 +352,7 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
 
         phi_matrix = np.diag(np.sin(self.phi_array))
         if(not self.beenakker):
-            phi_matrix = np.kron(phi_matrix, np.eye(2))
+            phi_matrix = np.kron(np.eye(2), phi_matrix)
         
         mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
 
