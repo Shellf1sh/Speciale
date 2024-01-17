@@ -46,20 +46,19 @@ class Qubit:#The base qubit class with the things that all qubits require
     def T_1_gamma(self):
         #constant_1f_flux = 2*np.pi*A_flux**2/(sc.constants.hbar*abs(self.eigvals[1]-self.eigvals[0]))
         constant_1f_ng = 2*np.pi*10/(4*abs(self.eigvals[1]-self.eigvals[0]))
-        constant_ohmic_ng = 5.2**2 * (self.eigvals[1]-self.eigvals[0])/(4*2*np.pi)
-        pre_constant_dielectric = (self.eigvals[1]-self.eigvals[0])*100/(2*self.EC)
-        post_constant_dielectric = 1/np.tanh((self.eigvals[1]-self.eigvals[0])*hbar*1e9/(2*kB*0.02)) + 1
-        #The temperature is set at 20mK like in the litterature
-        costant_dielectric = pre_constant_dielectric * post_constant_dielectric
+        constant_ohmic_ng = (5.2)**2/(4*2*np.pi*1e9) * (self.eigvals[1]-self.eigvals[0])
+        new_constant_ohmic_ng = 1e18*(5.2e-9)**2 * (self.eigvals[1]-self.eigvals[0])/(2*np.pi)
 
         mel_C = self.matrix_element_C()
-        mel_F = self.matrix_element_F()
-        print("Charge matrix element: " + str(mel_C))
-        print("Phi matrix element: " + str(mel_F))
-        print("Qubit energies: " + str(self.eigvals[0]) + " and " + str(self.eigvals[1]))
-        print("Qubit frequency: " + str(self.eigvals[1]-self.eigvals[0]))
+        #mel_F = self.matrix_element_F()
+        if(self.verbose):
+            print("Charge matrix element: " + str(mel_C))
+            #print("Phi matrix element: " + str(mel_F))
+            print("Qubit energies: " + str(self.eigvals[0]) + " and " + str(self.eigvals[1]))
+            print("Qubit frequency: " + str(self.eigvals[1]-self.eigvals[0]))
+        #The decay rates are return in GHz which is 1/ns
+        return np.array([constant_1f_ng*mel_C, new_constant_ohmic_ng*mel_C])
 
-        return np.array([constant_1f_ng*mel_C, constant_ohmic_ng*mel_C, costant_dielectric*mel_F])
 
     def plot_wav(self, x, wavefuncs):
         if(len(self.eigvals) == 0):#If the Hamiltonian hasn't been solved yet then solve it
@@ -225,13 +224,6 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         #The Fourier transformed cos(phi/2) and sin(phi/2)
         cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
         sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
-
-        if(self.verbose):
-            fig, (ax1, ax2) = plt.subplots(1, 2)
-            ax1.imshow(cos.real)
-            ax1.set(title = "Cosine (Real part)")
-            ax2.imshow(sin.imag)
-            ax2.set(title = "Sine (Imaginary part)")
 
         return self.gap*(np.kron(sz, cos) + self.r*np.kron(sx, sin))
 
