@@ -22,7 +22,7 @@ class Qubit:#The base qubit class with the things that all qubits require
     def Hamiltonian(self):
         Hamtot = self.Hamkin() + self.Hampot()
         if(sc.linalg.ishermitian(Hamtot) != True):
-            print("The Hamiltinian is not hermitian!!!")
+            print("The Hamiltonian is not hermitian!!!")
 
         return Hamtot
 
@@ -36,18 +36,12 @@ class Qubit:#The base qubit class with the things that all qubits require
     
     def matrix_element_F(self):
         return 0 #This is basis and design specific, see child classes
-    
-    def n_matrix(self):
-        return 0 #This is basis and model specific, see child classes
-    
-    def phi_matrix(self):
-        return 0 #This is basis and model specific, see child classes
 
     def T_1_gamma(self):
         #constant_1f_flux = 2*np.pi*A_flux**2/(sc.constants.hbar*abs(self.eigvals[1]-self.eigvals[0]))
-        constant_1f_ng = 2*np.pi*10/(4*abs(self.eigvals[1]-self.eigvals[0]))
-        constant_ohmic_ng = (5.2)**2/(4*2*np.pi*1e9) * (self.eigvals[1]-self.eigvals[0])
-        new_constant_ohmic_ng = 1e18*(5.2e-9)**2 * (self.eigvals[1]-self.eigvals[0])/(2*np.pi)
+        constant_1f_ng = 10/4*(2*np.pi)**2 *1/abs(self.eigvals[1]-self.eigvals[0])
+        constant_1f_ng_new = (4*2*np.pi)**2 * 1e-8 * 1/abs(self.eigvals[1]-self.eigvals[0])
+        constant_ohmic_ng = (4*2*np.pi*5.2)**2 * 1e-9 * (self.eigvals[1]-self.eigvals[0])
 
         mel_C = self.matrix_element_C()
         #mel_F = self.matrix_element_F()
@@ -57,7 +51,7 @@ class Qubit:#The base qubit class with the things that all qubits require
             print("Qubit energies: " + str(self.eigvals[0]) + " and " + str(self.eigvals[1]))
             print("Qubit frequency: " + str(self.eigvals[1]-self.eigvals[0]))
         #The decay rates are return in GHz which is 1/ns
-        return np.array([constant_1f_ng*mel_C, new_constant_ohmic_ng*mel_C])
+        return np.array([constant_1f_ng_new*mel_C, constant_ohmic_ng*mel_C])
 
 
     def plot_wav(self, x, wavefuncs):
@@ -106,9 +100,11 @@ class transmon_charge(Qubit):
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        #DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        DH = np.diag(np.array([(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2 #* self.EJ/beta**2
 
         return mel
     
