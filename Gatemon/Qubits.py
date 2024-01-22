@@ -139,7 +139,7 @@ class transmon_charge(Qubit):
 
         self.ng = ng_original
 
-        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+        return np.sqrt(1e-8/2*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
         
 
@@ -219,7 +219,7 @@ class transmon_flux(Qubit):
 
         self.ng = ng_original
 
-        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+        return np.sqrt(1e-8/2*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
 
     
@@ -290,7 +290,7 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
 
         phi_matrix = np.kron(np.eye(2), phi_matrix)
 
-        mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
+        mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2 * self.EC**2
 
         return mel
     
@@ -311,7 +311,7 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
 
         self.ng = ng_original
 
-        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+        return np.sqrt(1e-8/2*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
 
     def plot_wav(self, x, wavefuncs):
@@ -325,6 +325,26 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
             self.N += 1
 
         self.n_cut = int((self.N-1)/2)#Setting the charge cut-off
+
+    def T_1_gamma_T(self): #We don't know the coupling constants A_T and B_T    
+        qubit_freq = self.eigvals[1] - self.eigvals[1]
+
+        self.coords = np.arange(-self.n_cut, self.n_cut+1)
+        x, y = np.meshgrid(self.coords, self.coords)
+        cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
+
+        operator = -1/(2*np.sqrt(1-self.T))*np.kron(np.eye(2), cos)
+
+        mel = np.abs(np.conjugate(self.eigvecs[1].T @ operator @ self.eigvecs[0]))**2
+
+        gamma_1f = (2*np.pi)**2 * self.gap**2 * mel * 1/np.abs(qubit_freq)
+        gamma_ohmic = (2*np.pi)**2 * self.gap**2 * mel *qubit_freq
+
+        return np.array([gamma_1f, gamma_ohmic])
+
+
+
+
 
 #================================Gatemon in flux basis===========================================
 class gatemon_flux(Qubit):#Averins model for the Gatemon
@@ -392,7 +412,7 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
             DH = np.kron(np.eye(2), DH)
 
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 *self.EC**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2
 
         return mel
 
@@ -425,9 +445,25 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
 
         self.ng = ng_original
 
-        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+        return np.sqrt(1e-8/2*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
-    
+    def T_1_gamma_T(self): #We don't know the coupling constants A_T and B_T    
+        qubit_freq = self.eigvals[1] - self.eigvals[1]
+
+        cos = np.diag(np.cos(self.phi_array/2))
+        sin = np.diag(np.sin(self.phi_array/2))
+
+        if(self.beenakker):
+            operator = sin**2/(2*np.sqrt(1-self.T*sin**2))
+        else:
+            operator = -1/(2*np.sqrt(1-self.T))*np.kron(np.eye(2), cos)
+
+        mel = np.abs(np.conjugate(self.eigvecs[1].T @ operator @ self.eigvecs[0]))**2
+
+        gamma_1f = (2*np.pi)**2 * self.gap**2 * mel * 1/np.abs(qubit_freq)
+        gamma_ohmic = (2*np.pi)**2 * self.gap**2 * mel * qubit_freq
+
+        return np.array([gamma_1f, gamma_ohmic])
     
     def set_resolution(self, N):
         self.N = N
