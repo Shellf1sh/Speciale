@@ -342,6 +342,31 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
 
         return np.array([gamma_1f, gamma_ohmic])
 
+    def dephasing_rate_T(self):
+        T_original = self.ng
+        if(T_original != 1):
+            T_plus = T_original + 0.002
+        else:
+            T_plus = T_original
+
+        if(T_original != 0):
+            T_minus = T_original - 0.002
+        else:
+            T_minus = T_original
+
+        self.T = T_plus
+        self.solve()
+        omega_plus = self.eigvals[1] - self.eigvals[0]
+
+        self.T = T_minus
+        self.solve()
+        omega_minus = self.eigvals[1] - self.eigvals[0]
+
+        first_derivative = (omega_plus - omega_minus)/(T_plus - T_minus)
+
+        self.T = T_original
+
+        return np.sqrt(first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
 
 
@@ -464,6 +489,32 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         gamma_ohmic = (2*np.pi)**2 * self.gap**2 * mel * qubit_freq
 
         return np.array([gamma_1f, gamma_ohmic])
+    
+    def dephasing_rate_T(self):
+        T_original = self.ng
+        if(T_original != 1):
+            T_plus = T_original + 0.002
+        else:
+            T_plus = T_original
+
+        if(T_original != 0):
+            T_minus = T_original - 0.002
+        else:
+            T_minus = T_original
+
+        self.T = T_plus
+        self.solve()
+        omega_plus = self.eigvals[1] - self.eigvals[0]
+
+        self.T = T_minus
+        self.solve()
+        omega_minus = self.eigvals[1] - self.eigvals[0]
+
+        first_derivative = (omega_plus - omega_minus)/(T_plus - T_minus)
+
+        self.T = T_original
+
+        return np.sqrt(first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
     
     def set_resolution(self, N):
         self.N = N
