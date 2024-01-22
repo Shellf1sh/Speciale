@@ -122,6 +122,28 @@ class transmon_charge(Qubit):
 
         return mel
     
+    def dephasing_rate_ng(self):
+        ng_original = self.ng
+        ng_plus = ng_original + 0.002
+        ng_minus = ng_original - 0.002
+
+        self.ng = ng_plus
+        self.solve()
+        omega_plus = self.eigvals[1] - self.eigvals[0]
+
+        self.ng = ng_minus
+        self.solve()
+        omega_minus = self.eigvals[1] - self.eigvals[0]
+
+        first_derivative = (omega_plus - omega_minus)/(ng_plus - ng_minus)
+
+        self.ng = ng_original
+
+        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+
+        
+
+
 
 #================================Transmon in flux basis===========================================
 class transmon_flux(Qubit):
@@ -162,10 +184,10 @@ class transmon_flux(Qubit):
         n[0,self.N-1] = 1j#Add periodic boundary conditions
         n[self.N-1,0] = -1j
 
-        DH = -8*self.EC*(n/(2*self.dx) - self.ng*np.eye(self.N)) #This is dH/dng
+        DH = (n/(2*self.dx) - self.ng*np.eye(self.N)) #This is dH/dng
 
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2* self.EC**2
 
         return mel
     
@@ -179,6 +201,26 @@ class transmon_flux(Qubit):
         mel = np.absolute(np.conjugate(state1.T) @ sin_matrix @ state0)**2
 
         return mel
+    
+    def dephasing_rate_ng(self):
+        ng_original = self.ng
+        ng_plus = ng_original + 0.002
+        ng_minus = ng_original - 0.002
+
+        self.ng = ng_plus
+        self.solve()
+        omega_plus = self.eigvals[1] - self.eigvals[0]
+
+        self.ng = ng_minus
+        self.solve()
+        omega_minus = self.eigvals[1] - self.eigvals[0]
+
+        first_derivative = (omega_plus - omega_minus)/(ng_plus - ng_minus)
+
+        self.ng = ng_original
+
+        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+
 
     
 
@@ -211,7 +253,7 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         sy = np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
         sz = np.array([[1,0],[0,-1]])
 
-        self.r = np.sqrt(1-self.T)#From Kringhoej 2020
+        self.r = np.sqrt(1-self.T)
 
         self.coords = np.arange(-self.n_cut, self.n_cut+1)
         
@@ -227,12 +269,12 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        DH = np.diag(np.array([self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
 
         DH = np.kron(np.eye(2), DH)
 
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2
 
         return mel
     
@@ -251,6 +293,26 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
 
         return mel
+    
+    def dephasing_rate_ng(self):
+        ng_original = self.ng
+        ng_plus = ng_original + 0.002
+        ng_minus = ng_original - 0.002
+
+        self.ng = ng_plus
+        self.solve()
+        omega_plus = self.eigvals[1] - self.eigvals[0]
+
+        self.ng = ng_minus
+        self.solve()
+        omega_minus = self.eigvals[1] - self.eigvals[0]
+
+        first_derivative = (omega_plus - omega_minus)/(ng_plus - ng_minus)
+
+        self.ng = ng_original
+
+        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+
 
     def plot_wav(self, x, wavefuncs):
         super().plot_wav(x, wavefuncs)
@@ -330,7 +392,7 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
             DH = np.kron(np.eye(2), DH)
 
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 *self.EC**2
 
         return mel
 
@@ -345,6 +407,26 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         mel = np.absolute(np.conjugate(state1.T) @ phi_matrix @ state0)**2
 
         return mel
+    
+    def dephasing_rate_ng(self):
+        ng_original = self.ng
+        ng_plus = ng_original + 0.002
+        ng_minus = ng_original - 0.002
+
+        self.ng = ng_plus
+        self.solve()
+        omega_plus = self.eigvals[1] - self.eigvals[0]
+
+        self.ng = ng_minus
+        self.solve()
+        omega_minus = self.eigvals[1] - self.eigvals[0]
+
+        first_derivative = (omega_plus - omega_minus)/(ng_plus - ng_minus)
+
+        self.ng = ng_original
+
+        return np.sqrt(1e-8/4*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
+
     
     
     def set_resolution(self, N):
