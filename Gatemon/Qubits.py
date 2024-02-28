@@ -1,9 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sc
+from scipy import constants
+from scipy import sparse
+from scipy.sparse.linalg import eigsh
 
-kB = sc.constants.Boltzmann
-hbar = sc.constants.hbar
+kB = constants.Boltzmann
+hbar = constants.hbar
 
 #================================General Qubits==============================================
 class Qubit:#The base qubit class with the things that all qubits require
@@ -21,15 +24,16 @@ class Qubit:#The base qubit class with the things that all qubits require
 
     def Hamiltonian(self):
         Hamtot = self.Hamkin() + self.Hampot()
-        if(sc.linalg.ishermitian(Hamtot) != True):
-            print("The Hamiltonian is not hermitian!!!")
-
         return Hamtot
 
     def solve(self):
-        eigenvalues, eigenvectors =  np.linalg.eigh(self.Hamiltonian())
-        self.eigvals = eigenvalues
-        self.eigvecs = eigenvectors
+        ham = self.Hamiltonian()
+        eigenvalues, eigenvectors = eigsh(ham, 15, which ="SM")
+
+        indices = np.argsort(eigenvalues) #Makes sure that the 
+
+        self.eigvals = eigenvalues[indices]
+        self.eigvecs = eigenvectors[:,indices]
 
     def matrix_element_C(self):
         return 0 #This is basis and design specific, see child classes
@@ -39,8 +43,7 @@ class Qubit:#The base qubit class with the things that all qubits require
 
     def T_1_gamma(self):
         #constant_1f_flux = 2*np.pi*A_flux**2/(sc.constants.hbar*abs(self.eigvals[1]-self.eigvals[0]))
-        constant_1f_ng = 10/4*(2*np.pi)**2 *1/abs(self.eigvals[1]-self.eigvals[0])
-        constant_1f_ng_new = (4*2*np.pi)**2 * 1e-8 * 1/abs(self.eigvals[1]-self.eigvals[0])
+        constant_1f_ng = (4*2*np.pi)**2 * 1e-8 * 1/abs(self.eigvals[1]-self.eigvals[0])
         constant_ohmic_ng = (4*2*np.pi*5.2)**2 * 1e-9 * (self.eigvals[1]-self.eigvals[0])
 
         mel_C = self.matrix_element_C()
@@ -51,7 +54,7 @@ class Qubit:#The base qubit class with the things that all qubits require
             print("Qubit energies: " + str(self.eigvals[0]) + " and " + str(self.eigvals[1]))
             print("Qubit frequency: " + str(self.eigvals[1]-self.eigvals[0]))
         #The decay rates are return in GHz which is 1/ns
-        return np.array([constant_1f_ng_new*mel_C, constant_ohmic_ng*mel_C])
+        return np.array([constant_1f_ng*mel_C, constant_ohmic_ng*mel_C])
 
 
     def plot_wav(self, x, wavefuncs):
@@ -84,12 +87,14 @@ class transmon_charge(Qubit):
     def Hamkin(self):
         n_squared =  np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
         hkin = 4*self.EC*np.diag(n_squared) #In charge basis the (n-ng)**2 term is a diagonal matrix
-        return hkin
+        s_hkin = sparse.dia_matrix(hkin)
+        return s_hkin
 
     def Hampot(self):
         off_diag = np.ones(self.N - 1)     
         hpot = -self.EJ/2*(np.diag(off_diag, 1) + np.diag(off_diag, -1))
-        return hpot
+        s_hpot = sparse.dia_matrix(hpot)
+        return s_hpot
     
     def plot_wav(self, number_of_wavefuncs):
         print(self.eigvals[:number_of_wavefuncs])
@@ -101,10 +106,10 @@ class transmon_charge(Qubit):
         state1 = self.eigvecs[:,1]
 
         #DH = np.diag(np.array([-8*self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
-        DH = np.diag(np.array([(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        DH = sparse.diags(np.array([(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
 
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2 #* self.EJ/beta**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2 
 
         return mel
     
@@ -141,8 +146,6 @@ class transmon_charge(Qubit):
 
         return np.sqrt(1e-8/2*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
-        
-
 
 
 #================================Transmon in flux basis===========================================
@@ -167,12 +170,15 @@ class transmon_flux(Qubit):
         n2[self.N-1,0] = -1
 
         hkin = 4.0*self.EC*(1/(self.dx**2)*n2 - 2*self.ng*n/(2*self.dx) + self.ng**2*np.eye(self.N)) #Combine to create the kinetic energy term
-        return hkin
+        s_hkin = sparse.dia_matrix(hkin)
+        return s_hkin
     
     def Hampot(self):  
         cos_arr = np.cos(self.phi_array)        
         cos_matrix = -self.EJ*np.diag(cos_arr)
-        return cos_matrix
+        s_cos = sparse.dia_matrix(cos_matrix)
+        return s_cos
+    
 
     def matrix_element_C(self):
         off_diag = np.ones(self.N-1) 
@@ -184,7 +190,7 @@ class transmon_flux(Qubit):
         n[0,self.N-1] = 1j#Add periodic boundary conditions
         n[self.N-1,0] = -1j
 
-        DH = (n/(2*self.dx) - self.ng*np.eye(self.N)) #This is dH/dng
+        DH = sparse.coo_matrix(n/(2*self.dx) - self.ng*np.eye(self.N)) #This is dH/dng
 
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2* self.EC**2
@@ -245,8 +251,9 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
         hkin = 4*self.EC*np.diag(n_array) #In charge basis the (n-ng)**2 term is a diagonal matrix
 
-        hkin_2channel = np.kron(np.identity(2), hkin)
-        return hkin_2channel
+        hkin_2level= np.kron(np.identity(2), hkin)
+        s_hkin = sparse.coo_matrix(hkin_2level)
+        return s_hkin
     
     def Hampot(self):
         sx = np.array([[0, 1],[1, 0]])
@@ -261,7 +268,7 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
 
         #The Fourier transformed cos(phi/2) and sin(phi/2)
         cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
-        sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
+        sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
 
         return self.gap*(np.kron(sz, cos) + self.r*np.kron(sx, sin))
 
@@ -269,12 +276,12 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         state0 = self.eigvecs[:,0]
         state1 = self.eigvecs[:,1]
 
-        DH = np.diag(np.array([self.EC*(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
+        DH = sparse.diags(np.array([(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
 
-        DH = np.kron(np.eye(2), DH)
+        DH_I2 = sparse.kron(sparse.eye(2), DH)
 
         #The matrix element squared
-        mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2
+        mel = np.absolute(np.conjugate(state1.T) @ DH_I2 @ state0)**2 * self.EC**2
 
         return mel
     
@@ -296,8 +303,8 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
     
     def dephasing_rate_ng(self):
         ng_original = self.ng
-        ng_plus = ng_original + 0.002
-        ng_minus = ng_original - 0.002
+        ng_plus = ng_original + 0.001
+        ng_minus = ng_original - 0.001
 
         self.ng = ng_plus
         self.solve()
@@ -327,30 +334,34 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         self.n_cut = int((self.N-1)/2)#Setting the charge cut-off
 
     def T_1_gamma_T(self): #We don't know the coupling constants A_T and B_T    
-        qubit_freq = self.eigvals[1] - self.eigvals[1]
+        qubit_freq = self.eigvals[1] - self.eigvals[0]
 
         self.coords = np.arange(-self.n_cut, self.n_cut+1)
+        #print(self.coords)
         x, y = np.meshgrid(self.coords, self.coords)
         cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
+        sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
 
-        operator = -1/(2*np.sqrt(1-self.T))*np.kron(np.eye(2), cos)
+        operator = sparse.coo_matrix(-self.gap/(2*np.sqrt(1-self.T)) * sin)
 
-        mel = np.abs(np.conjugate(self.eigvecs[1].T @ operator @ self.eigvecs[0]))**2
+        operator_I2 = sparse.kron(sparse.eye(2), operator)
 
-        gamma_1f = (2*np.pi)**2 * self.gap**2 * mel * 1/np.abs(qubit_freq)
-        gamma_ohmic = (2*np.pi)**2 * self.gap**2 * mel *qubit_freq
+        mel = np.abs(np.conjugate((self.eigvecs[:,1]).T) @ operator_I2 @ self.eigvecs[:,0])**2
+
+        gamma_1f = (2*np.pi)**2 * mel * 1/np.abs(qubit_freq)
+        gamma_ohmic = (2*np.pi)**2 * mel *qubit_freq
 
         return np.array([gamma_1f, gamma_ohmic])
 
     def dephasing_rate_T(self):
-        T_original = self.ng
-        if(T_original != 1):
-            T_plus = T_original + 0.002
+        T_original = self.T
+        if(T_original < 0.999):
+            T_plus = T_original + 0.001
         else:
             T_plus = T_original
 
-        if(T_original != 0):
-            T_minus = T_original - 0.002
+        if(T_original > 0.001):
+            T_minus = T_original - 0.001
         else:
             T_minus = T_original
 
@@ -372,9 +383,10 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
 
 
 #================================Gatemon in flux basis===========================================
-class gatemon_flux(Qubit):#Averins model for the Gatemon
+class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
     def __init__(self, N, EC, gap, T, ng): #Parse all the parameters
         super().__init__(N)
+        self.N = N
         self.EC = EC
         self.gap = gap
         self.ng = ng
@@ -384,43 +396,74 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
 
         self.phi_array = np.linspace(-np.pi, np.pi, self.N)
 
+        self.T_is_list = False
+        if((type(T) == list or type(T) == np.ndarray)):
+            self.T_len = len(T)
+            self.T_is_list = True
+        elif(type(T) == int or type(T) == float):
+            self.T_len = 1
+
     def Hamkin(self):
         off_diag = np.ones(self.N - 1)
         iden = np.identity(self.N)
         
         n = -1j/(2*self.dx) * (np.diag(off_diag, 1) + np.diag(-1*off_diag, -1)) #Create the first derivative
-        n[0,self.N-1] = 1j/(2*self.dx)#Add periodic boundary conditions
-        n[self.N-1,0] = -1j/(2*self.dx)
+        n[0,-1] = -1j/(2*self.dx)#Add periodic boundary conditions
+        n[-1,0] = 1j/(2*self.dx)
 
         n2 = -1/(self.dx**2)*(-2*iden+np.diag(off_diag,-1)+np.diag(off_diag,1)) #Create the second derivative matrix
-        n2[0,self.N-1] = -1/(self.dx**2) #Add periodic boundary conditions
-        n2[self.N-1,0] = -1/(self.dx**2)
+        n2[0,-1] = -1/(self.dx**2) #Add periodic boundary conditions
+        n2[-1,0] = -1/(self.dx**2)
 
-        n_const = self.ng*np.identity(self.N)
+        n_const = self.ng*sparse.eye(self.N)
 
         hkin = 4.0*self.EC*(n2 - 2*self.ng*n + n_const@n_const) #Combine to create the kinetic energy term
         
         if(self.beenakker):
-            return hkin
+            return sparse.coo_matrix(hkin)
+        
+        #H_kin = sparse.kron(sparse.eye(2), hkin)
 
-        return  np.kron(np.eye(2), hkin)
+
+        H_kin = sparse.kron(sparse.eye(2**(self.T_len)), hkin)
+        print("Kin" + str(H_kin.shape))
+
+        return  H_kin
 
 
     def Hampot(self):
         sx = np.array([[0, 1],[1, 0]])
         sy = np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
         sz = np.array([[1,0],[0,-1]])
-        r = np.sqrt(1-self.T)#From Kringhoej 2020
+        
 
-        cos = np.diag(np.cos(self.phi_array/2))
-        sin = np.diag(np.sin(self.phi_array/2))
+        cos = sparse.diags(np.cos(self.phi_array/2))
+        sin = sparse.diags(np.sin(self.phi_array/2))
 
         if(self.beenakker):
-            self.sin_half = np.sin(self.phi_array/2)
-            beenakker_pot = -self.gap*np.sqrt(1-(self.T)*self.sin_half**2)
-            return np.diag(beenakker_pot)
+            sin_half = np.sin(self.phi_array/2)
+            self.beenakker_pot = -self.gap*np.sqrt(1-(self.T)*sin_half**2)
+            return sparse.diags(self.beenakker_pot)
 
-        return -self.gap*(np.kron(sz, cos) + r*np.kron(sx, sin))
+        if(not self.T_is_list):
+            self.r = np.sqrt(1-self.T)
+            H_pot = -self.gap*(sparse.kron(sz, cos) + self.r*sparse.kron(sx, sin))
+            return sparse.coo_matrix(H_pot)
+        elif(self.T_is_list):
+            r = np.sqrt(1-self.T[0])
+            H_pot = (sparse.kron(sz, cos) + r*sparse.kron(sx, sin))
+            
+            for i in range(1, self.T_len):
+                r2 = np.sqrt(1-self.T[i])
+                other_channel = (sparse.kron(sz, cos) + r2*sparse.kron(sx, sin))
+
+                H_size = H_pot.shape[0]/self.N
+                
+                H_pot = sparse.kron(H_pot, sparse.eye(2)) +  sparse.kron(sparse.eye(H_size), other_channel)
+
+            return -self.gap*H_pot
+
+        
     
     def matrix_element_C(self):
         off_diag = np.ones(self.N-1) 
@@ -433,8 +476,11 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         n[self.N-1,0] = 1j
 
         DH = -(1/(2*self.dx)*n - self.ng*np.eye(self.N))
-        if(not self.beenakker):
-            DH = np.kron(np.eye(2), DH)
+        #if(self.beenakker):
+            #DH = np.kron(np.eye(2), DH)
+
+        if(self.T_is_list or not self.beenakker):
+            DH = np.kron(np.eye(2**(self.T_len)), DH)
 
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2
@@ -455,8 +501,8 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
     
     def dephasing_rate_ng(self):
         ng_original = self.ng
-        ng_plus = ng_original + 0.002
-        ng_minus = ng_original - 0.002
+        ng_plus = ng_original + 0.001
+        ng_minus = ng_original - 0.001
 
         self.ng = ng_plus
         self.solve()
@@ -466,39 +512,39 @@ class gatemon_flux(Qubit):#Averins model for the Gatemon
         self.solve()
         omega_minus = self.eigvals[1] - self.eigvals[0]
 
-        first_derivative = (omega_plus - omega_minus)/(ng_plus - ng_minus)
+        first_derivative = (omega_plus - omega_minus)/(ng_plus - ng_minus) #Finite difference methode
 
         self.ng = ng_original
 
         return np.sqrt(1e-8/2*first_derivative**2*np.abs(np.log(2*np.pi*1e-6)))
 
     def T_1_gamma_T(self): #We don't know the coupling constants A_T and B_T    
-        qubit_freq = self.eigvals[1] - self.eigvals[1]
+        qubit_freq = self.eigvals[1] - self.eigvals[0]
 
         cos = np.diag(np.cos(self.phi_array/2))
         sin = np.diag(np.sin(self.phi_array/2))
 
         if(self.beenakker):
-            operator = sin**2/(2*np.sqrt(1-self.T*sin**2))
+            operator = self.gap*sin**2/(2*np.sqrt(1-self.T*sin**2))
         else:
-            operator = -1/(2*np.sqrt(1-self.T))*np.kron(np.eye(2), cos)
+            operator = -self.gap/(2*np.sqrt(1-self.T))*np.kron(np.eye(2), sin)
 
-        mel = np.abs(np.conjugate(self.eigvecs[1].T @ operator @ self.eigvecs[0]))**2
+        mel = np.abs(np.conjugate(self.eigvecs[:,1].T) @ operator @ self.eigvecs[:,0])**2
 
-        gamma_1f = (2*np.pi)**2 * self.gap**2 * mel * 1/np.abs(qubit_freq)
-        gamma_ohmic = (2*np.pi)**2 * self.gap**2 * mel * qubit_freq
+        gamma_1f = (2*np.pi)**2 * mel * 1/np.abs(qubit_freq)
+        gamma_ohmic = (2*np.pi)**2  * mel * qubit_freq
 
         return np.array([gamma_1f, gamma_ohmic])
     
     def dephasing_rate_T(self):
-        T_original = self.ng
-        if(T_original != 1):
-            T_plus = T_original + 0.002
+        T_original = self.T
+        if(T_original < 0.999):
+            T_plus = T_original + 0.001
         else:
             T_plus = T_original
 
-        if(T_original != 0):
-            T_minus = T_original - 0.002
+        if(T_original > 0.001):
+            T_minus = T_original - 0.001
         else:
             T_minus = T_original
 
