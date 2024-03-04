@@ -1,9 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sc
+import copy
 from scipy import constants
 from scipy import sparse
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import eigsh, ArpackNoConvergence
+from functions import kron_sum
 
 kB = constants.Boltzmann
 hbar = constants.hbar
@@ -28,7 +30,12 @@ class Qubit:#The base qubit class with the things that all qubits require
 
     def solve(self):
         ham = self.Hamiltonian()
-        eigenvalues, eigenvectors = eigsh(ham, 15, which ="SM")
+        try:
+            eigenvalues, eigenvectors = eigsh(ham, 15, which ="SM", maxiter = ham.shape[0]*100)
+        except ArpackNoConvergence as e:
+            print("No convergence")
+            eigenvalues = e.eigenvalues
+            eigenvectors = e.eigenvectors
 
         indices = np.argsort(eigenvalues) #Makes sure that the 
 
@@ -239,20 +246,37 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         self.ng = ng
         self.T = T
         #There is no Beenakker model in charge basis because it would require numerical integration 
-        #of every matrix element of the sqrt(1-sin(phi/2)^2) operator
+        #of every matrix element of the sqrt(1-Tsin(phi/2)^2) operator
         
         if(self.N%2 == 0):#Making sure that the resolution is uneven
             self.N += 1
 
         self.n_cut = int((self.N-1)/2)#Setting the charge cut-off
 
+        self.T_is_list = False
+        if((type(T) == list or type(T) == np.ndarray)):
+            self.T_len = len(T)
+            self.T_is_list = True
+        elif(type(T) == int or type(T) == float):
+            self.T_len = 1
 
     def Hamkin(self):
         n_array = np.array([(i-self.ng)**2 for i in range(-self.n_cut, self.n_cut+1)])
         hkin = 4*self.EC*np.diag(n_array) #In charge basis the (n-ng)**2 term is a diagonal matrix
+        H_kin = sparse.kron(sparse.eye(2), hkin)
 
-        hkin_2level= np.kron(np.identity(2), hkin)
-        s_hkin = sparse.coo_matrix(hkin_2level)
+        if(self.T_is_list):           
+            other_channel = copy.copy(H_kin)
+            for i in range(1,self.T_len):
+                H_kin = kron_sum(H_kin, self.N, other_channel, self.N)
+            
+            s_hkin = H_kin
+        else:
+            s_hkin = sparse.kron(sparse.eye(2), hkin)
+         
+        #hkin_2level= np.kron(np.identity(2), hkin)
+        #s_hkin = sparse.coo_matrix(hkin_2level)
+
         return s_hkin
     
     def Hampot(self):
@@ -260,17 +284,33 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         sy = np.array([[0,-1j],[1j,0]]) #Create the Pauli matrices
         sz = np.array([[1,0],[0,-1]])
 
-        self.r = np.sqrt(1-self.T)
+        #self.r = np.sqrt(1-self.T)
 
         self.coords = np.arange(-self.n_cut, self.n_cut+1)
         
         x, y = np.meshgrid(self.coords, self.coords)
 
         #The Fourier transformed cos(phi/2) and sin(phi/2)
-        cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
-        sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
+        cos = sparse.coo_matrix(-2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1)))
+        sin = sparse.coo_matrix(-4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1)))
 
-        return self.gap*(np.kron(sz, cos) + self.r*np.kron(sx, sin))
+        if(not self.T_is_list):
+            self.r = np.sqrt(1-self.T)
+            H_pot = -self.gap*(sparse.kron(sz, cos) + self.r*sparse.kron(sx, sin))
+            return sparse.coo_matrix(H_pot)
+        elif(self.T_is_list):
+            r = np.sqrt(1-self.T[0])
+            H_pot = (sparse.kron(sz, cos) + r*sparse.kron(sx, sin))
+            
+            for i in range(1, self.T_len):
+                r2 = np.sqrt(1-self.T[i])
+                other_channel = (sparse.kron(sz, cos) + r2*sparse.kron(sx, sin))
+
+                H_pot = kron_sum(H_pot, self.N, other_channel, self.N)
+
+            return -self.gap*H_pot
+
+        #return self.gap*(np.kron(sz, cos) + self.r*np.kron(sx, sin))
 
     def matrix_element_C(self):
         state0 = self.eigvecs[:,0]
@@ -278,8 +318,9 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
 
         DH = sparse.diags(np.array([(i-self.ng) for i in range(-self.n_cut, self.n_cut+1)]))
 
-        DH_I2 = sparse.kron(sparse.eye(2), DH)
+        #DH_I2 = sparse.kron(sparse.eye(2), DH)
 
+        DH_I2 = sparse.kron(sparse.eye(2**(self.T_len)), DH)
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH_I2 @ state0)**2 * self.EC**2
 
@@ -426,10 +467,9 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
 
 
         H_kin = sparse.kron(sparse.eye(2**(self.T_len)), hkin)
-        print("Kin" + str(H_kin.shape))
+        #print("Kin" + str(H_kin.shape))
 
         return  H_kin
-
 
     def Hampot(self):
         sx = np.array([[0, 1],[1, 0]])
@@ -456,10 +496,8 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
             for i in range(1, self.T_len):
                 r2 = np.sqrt(1-self.T[i])
                 other_channel = (sparse.kron(sz, cos) + r2*sparse.kron(sx, sin))
-
-                H_size = H_pot.shape[0]/self.N
                 
-                H_pot = sparse.kron(H_pot, sparse.eye(2)) +  sparse.kron(sparse.eye(H_size), other_channel)
+                H_pot = kron_sum(H_pot, self.N, other_channel, self.N)
 
             return -self.gap*H_pot
 
