@@ -31,7 +31,7 @@ class Qubit:#The base qubit class with the things that all qubits require
     def solve(self):
         ham = self.Hamiltonian()
         try:
-            eigenvalues, eigenvectors = eigsh(ham, 15, which ="SM", maxiter = ham.shape[0]*100)
+            eigenvalues, eigenvectors = eigsh(ham, min([20, ham.shape[0]-2]), which ="SA", maxiter = ham.shape[0]*100)
         except ArpackNoConvergence as e:
             print("No convergence")
             eigenvalues = e.eigenvalues
@@ -69,7 +69,7 @@ class Qubit:#The base qubit class with the things that all qubits require
             self.solve()
         
         for i in range(wavefuncs):
-            plt.plot(x, self.eigvecs[i] * self.eigvecs[i] + self.eigvals[i], '-o')
+            plt.plot(x, np.conjugate(self.eigvecs[i]) * self.eigvecs[i] + self.eigvals[i], '-o')
 
         plt.grid(True)
 
@@ -378,7 +378,6 @@ class gatemon_charge(Qubit):#Averin model for the Gatemon
         qubit_freq = self.eigvals[1] - self.eigvals[0]
 
         self.coords = np.arange(-self.n_cut, self.n_cut+1)
-        #print(self.coords)
         x, y = np.meshgrid(self.coords, self.coords)
         cos = -2*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2 - 1))
         sin = -4j*(x-y)*np.cos(np.pi*(x-y))/(np.pi*(4*(x-y)**2-1))
@@ -466,7 +465,7 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
         #H_kin = sparse.kron(sparse.eye(2), hkin)
 
 
-        H_kin = sparse.kron(sparse.eye(2**(self.T_len)), hkin)
+        H_kin = self.T_len*sparse.kron(sparse.eye(2**(self.T_len)), hkin)
         #print("Kin" + str(H_kin.shape))
 
         return  H_kin
@@ -482,7 +481,14 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
 
         if(self.beenakker):
             sin_half = np.sin(self.phi_array/2)
-            self.beenakker_pot = -self.gap*np.sqrt(1-(self.T)*sin_half**2)
+            if(not self.T_is_list):
+                self.beenakker_pot = -self.gap*np.sqrt(1-(self.T)*sin_half**2) 
+                
+            if(self.T_is_list):
+                self.beenakker_pot = np.zeros_like(sin_half)
+                for i in self.T:
+                    self.beenakker_pot += -self.gap*np.sqrt(1-(i)*sin_half**2)
+
             return sparse.diags(self.beenakker_pot)
 
         if(not self.T_is_list):
@@ -518,7 +524,7 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
             #DH = np.kron(np.eye(2), DH)
 
         if(self.T_is_list or not self.beenakker):
-            DH = np.kron(np.eye(2**(self.T_len)), DH)
+            DH = np.kron(np.eye(2**(self.T_len)), DH)*self.T_len
 
         #The matrix element squared
         mel = np.absolute(np.conjugate(state1.T) @ DH @ state0)**2 * self.EC**2
