@@ -75,7 +75,7 @@ class gatemon_flux:
         #order = np.argsort(v)
         self.eigvals = v #np.array([v[i] for i in order])
         self.eigvecs = w # np.array([w[:,i] for i in order])   
-        print(np.shape(self.eigvecs), np.shape(self.eigvecs[0]), np.shape(self.eigvecs[1]), np.shape(self.eigvecs[2]))  
+        #print(np.shape(self.eigvecs), np.shape(self.eigvecs[0]), np.shape(self.eigvecs[1]), np.shape(self.eigvecs[2]))  
 
     def getEigvals(self): #A function that returns the eigenvalues
         return self.eigvals
@@ -149,7 +149,7 @@ class gatemon_charge_averin(gatemon_flux):
         off_diag = np.ones(self.n-1)     
         cos = (np.diag(off_diag, 1)+np.diag(off_diag, -1))/2
         sin = (np.diag(off_diag, 1)-np.diag(off_diag, -1))/(2j)
-        print(np.shape(cos), np.shape(sz))
+        #print(np.shape(cos), np.shape(sz))
         v = np.kron(cos,sz)+r*np.kron(sin,sy)
         return v
 

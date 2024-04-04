@@ -483,7 +483,7 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
             sin_half = np.sin(self.phi_array/2)
             if(not self.T_is_list):
                 self.beenakker_pot = -self.gap*np.sqrt(1-(self.T)*sin_half**2) 
-                
+
             if(self.T_is_list):
                 self.beenakker_pot = np.zeros_like(sin_half)
                 for i in self.T:
@@ -520,10 +520,8 @@ class gatemon_flux(Qubit):#Averin and Beenakkers model for the Gatemon
         n[self.N-1,0] = 1j
 
         DH = -(1/(2*self.dx)*n - self.ng*np.eye(self.N))
-        #if(self.beenakker):
-            #DH = np.kron(np.eye(2), DH)
 
-        if(self.T_is_list or not self.beenakker):
+        if(not self.beenakker):
             DH = np.kron(np.eye(2**(self.T_len)), DH)*self.T_len
 
         #The matrix element squared
