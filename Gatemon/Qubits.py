@@ -214,7 +214,8 @@ class transmon_flux(Qubit):
         mel = np.absolute(np.conjugate(state1.T) @ sin_matrix @ state0)**2
 
         return mel
-    
+   
+    #Calculate the dephasing time
     def dephasing_rate_ng(self):
         ng_original = self.ng
         ng_plus = ng_original + 0.002
